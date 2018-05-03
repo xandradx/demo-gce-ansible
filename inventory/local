@@ -1,0 +1,7 @@
+localhost connection=local
+[webdevel]
+webdev1 ansible_host=webdev1.example.com ansible_user=jandrade
+
+[webdevel:vars]
+httpd_docroot=/var/www/html
+nginx_docroot=/usr/share/nginx/html

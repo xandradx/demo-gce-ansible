@@ -1,0 +1,10 @@
+---
+- name: Test Inv
+  hosts: demo1
+  gather_facts: True
+  become: True
+  
+
+  roles:
+    - { role: nginxinc.nginx, type: opensource }
+

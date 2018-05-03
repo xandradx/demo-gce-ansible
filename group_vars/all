@@ -1,0 +1,3 @@
+service_account_email: PLACE-YOUR-SERVICE-ACCOUNT-HERE..@iam.gserviceaccount.com
+credentials_file: PLACE-YOUR-PATH-TO-YOUR-JSON-SECRET-FROM-GOOGLE
+project_id: PLACE-YOU-PROJECT-NAME

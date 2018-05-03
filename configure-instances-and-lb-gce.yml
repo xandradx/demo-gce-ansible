@@ -1,0 +1,123 @@
+- name: Create and configure instances 
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    machine_type: f1-micro
+    image: centos-7
+
+  tasks:
+
+  - name: Launch instances
+    gce:
+      name: demo
+      num_instances: 3
+      machine_type: "{{ machine_type }}"
+      image: "{{ image }}"
+      service_account_email: "{{ service_account_email }}"
+      credentials_file: "{{ credentials_file }}"
+      project_id: "{{ project_id }}"
+      tags:
+        - demo
+    register: gce_instances
+
+  - name: Wait SSH to come up
+    wait_for:
+      host: "{{ item.public_ip }}"
+      port: 22
+      delay: 10
+      timeout: 60
+    with_items: "{{ gce_instances.instance_data }}"
+
+  - name: "Refresh inventory to ensure new instaces exist in inventory"
+    meta: refresh_inventory
+
+- name: Configure Instances
+  hosts: tag_demo
+  gather_facts: True
+  become: True
+  tags:
+    - configuration
+
+  handlers:
+
+  - name: restart_nginx
+    service:
+      name: nginx
+      state: restarted
+  tasks:
+
+  - name: Test Connection
+    wait_for_connection:
+      timeout: 80
+      delay: 10
+  - name: Update OS
+    yum:
+      name: '*'
+      state: latest
+    tags:
+      - skip_ansible_lint
+
+  - name: Install NGINX Webserver
+    yum:
+      name: nginx
+      state: latest
+    tags:
+      - skip_ansible_lint
+
+  - name: Set Dummy Example Page
+    tags:
+      - content
+    template:
+      src: index.html.j2
+      dest: /usr/share/nginx/html/index.html
+      owner: nginx
+      group: nginx
+      mode: 0644
+
+  - name: Set Basic configurarion for Web Server
+    copy:
+      src: basic.conf
+      dest: /etc/nginx/conf.d/
+    notify:
+      - restart_nginx
+
+  - name: Enable and Start WebServer
+    service:
+      name: nginx
+      state: started
+      enabled: True
+
+- name: Configure LB on Google
+  hosts: localhost
+  tags:
+    - load_balancer
+
+  tasks:
+
+  - name: Get Fact from recently provisioned instances on demo group
+    set_fact:
+      lb_instances: "{{ lb_instances|default([]) }} + [ '{{ hostvars[item]['gce_zone'] }}/{{ hostvars[item]['gce_name'] }}']"
+    with_items: "{{ groups.tag_demo }}"
+
+  - name: Configure Load Balancer on Google
+    gce_lb:
+      name: demolb
+      region: us-central1
+      members:  "{{ lb_instances }}"
+      project_id: "{{ project_id }}"
+      httphealthcheck_name: hc
+      httphealthcheck_port: 80
+      httphealthcheck_path: "/"
+    register: demolb
+
+  - name: Test Dummy Page on New LB
+    uri:
+      url: http://{{ demolb.external_ip }}/
+    register: test_uri
+    until: test_uri.status == 200
+    retries: 5
+    delay: 15
+
+  - debug:
+      msg: You LB is ready on http://{{ demolb.external_ip }}/

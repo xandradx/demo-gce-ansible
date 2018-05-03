@@ -1,0 +1,33 @@
+- name: Create instance(s)
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    machine_type: n1-standard-1
+    image: windows-server-2016-dc
+    instances_list:
+      - windemo1
+  tasks:
+
+  - name: Launch instances
+    gce:
+      instance_names: "{{ instances_list | join(',') }}"
+      machine_type: "{{ machine_type }}"
+      image: "{{ image }}"
+      service_account_email: "{{ service_account_email }}"
+      credentials_file: "{{ credentials_file }}"
+      project_id: "{{ project_id }}"
+      tags:
+        - windemo
+    register: gce_instances
+
+  - name: Wait RDP to come up
+    wait_for:
+      host: "{{ item.public_ip }}"
+      port: 3389
+      delay: 10
+      timeout: 180
+    with_items: "{{ gce_instances.instance_data }}"
+
+  - name: "Refresh inventory to ensure new instaces exist in inventory"
+    meta: refresh_inventory

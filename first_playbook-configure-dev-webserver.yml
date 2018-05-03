@@ -1,0 +1,129 @@
+
+- name: Configurar un Web Server para Desarrollo
+  hosts: webdevel
+  become: True
+  vars:
+    web_server: ''
+    web_server_list:
+      - httpd
+      - nginx
+    users:
+      - hugo
+      - paco
+      - luis
+    pkg_tools:
+      - tmux
+      - screen
+      - vi
+
+  handlers:
+  - name: restart web server
+    service:
+      name: "{{ web_server }}"
+      state: restarted
+
+  tasks:
+
+  - name: Web Server Invalido
+    fail:
+      msg: El tipo de Web Server = {{ web_server }}, no es correcto
+    when:
+      - web_server not in web_server_list
+
+  - name: Instalar paquete para Web Server
+    yum:
+      name: "{{ web_server }}"
+      state: present
+
+  - name: Instalar herramientas adicionales
+    yum:
+      name: "{{ pkg_tools }}"
+      state: present
+
+  - name: Activar e iniciar Web Server
+    service:
+      name: "{{ web_server }}"
+      state: started
+      enabled: True
+
+  - name: Crear grupo para desarrolladores
+    group:
+      name: devel
+      state: present
+
+  - name: Crear usuarios para desarrolladores
+    user:
+      name: "{{ item }}"
+      state: present
+      groups: devel
+    with_items: "{{ users }}"
+
+  - name: Crear configuracion basica para Web Server
+    copy:
+      src: basic-{{ web_server }}.conf
+      dest: /etc/{{ web_server }}/conf.d/
+    notify:
+      - restart web server
+
+  - name: Activar reglas de firewall
+    firewalld:
+      service: "{{ item }}"
+      state: enabled
+      immediate: True
+      permanent: True
+    with_items:
+      - http
+      - https
+
+  - name: Permisos para document root
+    file:
+      path: "{{ vars[web_server + '_docroot'] }}"
+      state: directory
+      group: devel
+      mode: ug=rwx,o=rx
+    tags:
+      - permisos
+
+  - name: Permisos para document root ACL
+    acl:
+      path: "{{ vars[web_server + '_docroot'] }}"
+      entity: devel
+      etype: group
+      permissions: rwx
+      state: present
+      default: true
+    tags:
+      - permisos
+
+- name: Validar Funcionamiento de Web Server
+  hosts: webdevel
+  become: True
+
+  tasks:
+
+  - name: Crear pagina de prueba para nginx
+    copy:
+      content: "TEST PAGE"
+      dest: "{{ nginx_docroot }}/test.html"
+    when:
+      - web_server == 'nginx'
+
+  - name: Crear pagina de prueba para Apache
+    copy:
+      content: "TEST PAGE"
+      dest: "{{ httpd_docroot }}/test.html"
+    when:
+      - web_server == 'httpd'
+
+  - name: Validar acceso a Pagina desde Control Node
+    uri:
+      url: http://{{ ansible_host }}/test.html
+      status_code: 200
+    ignore_errors: True
+    delegate_to: localhost
+    become: False
+
+  - name: Eliminar pagina de prueba
+    file:
+      path: "{{ vars[web_server + '_docroot'] }}/test.html"
+      state: absent
